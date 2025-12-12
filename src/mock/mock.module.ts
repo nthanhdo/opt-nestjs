@@ -1,7 +1,11 @@
-import { Module } from '@nestjs/common';
-import { AuthMockModule } from '@mock/auth/auth.mock.module';
+import { Module, Global } from '@nestjs/common';
+import { MockAuthController } from './auth/mock-auth.controller';
+import { MockAuthService } from './auth/mock-auth.service';
 
+@Global()
 @Module({
-  imports: [AuthMockModule],
+  controllers: [MockAuthController],
+  providers: [MockAuthService],
+  exports: [MockAuthService],
 })
 export class MockModule {}

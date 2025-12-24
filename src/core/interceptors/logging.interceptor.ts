@@ -8,14 +8,11 @@ import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
 @Injectable()
-export class BenchmarkInterceptor implements NestInterceptor {
+export class LoggingInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const start = Date.now();
-
     return next.handle().pipe(
       tap(() => {
-        const duration = Date.now() - start;
-        // future: attach to logger / metrics
+        // future: AppLogger.log()
       }),
     );
   }

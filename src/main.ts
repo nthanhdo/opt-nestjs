@@ -1,47 +1,97 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as dotenv from 'dotenv';
+import { resolve } from 'path';
+
+/**
+ * =========================
+ * LOAD ENV EXPLICITLY
+ * =========================
+ */
+dotenv.config({
+  path: resolve(
+    process.cwd(),
+    'env',
+    `./env/.env.${process.env.NODE_ENV || 'development'}`,
+  ),
+});
+
 import { AppModule } from './app.module';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { GlobalContext } from './core/context/global-context';
-import { TransformInterceptor } from './core/interceptors/transform.interceptor';
-import { LoggerMiddleware } from './core/middlewares/logger.middleware';
+import { setupSwagger } from './core/swagger/swagger.setup';
+import { AppLogger } from './core/logger/app.logger';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-
-  const ctx = app.get(GlobalContext);
-
-  app.use(new LoggerMiddleware(ctx).use.bind(new LoggerMiddleware(ctx)));
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));
-  app.useGlobalInterceptors(new TransformInterceptor());
-
-  const port = parseInt(process.env.APP_PORT ?? '3000', 10);
-
-  const version = '1.0.0';
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Shop Service API document')
-    .setDescription('This is Shop Service API description')
-    .setVersion(version)
-    .addBearerAuth()
-    .build();
-
-  const document = SwaggerModule.createDocument(app, swaggerConfig, {
-    deepScanRoutes: false,  // ⛔ Quan trọng!
+  /**
+   * =========================
+   * CREATE APP
+   * =========================
+   */
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true,
   });
 
-  const outputDir = `./swagger/${version}`;
-  if (!existsSync(outputDir)) {
-    mkdirSync(outputDir, { recursive: true });
-  }
+  /**
+   * =========================
+   * CORE SERVICES
+   * =========================
+   */
+  const configService = app.get(ConfigService);
+  const logger = app.get(AppLogger);
 
-  const outputPath = `${outputDir}/swagger.json`;
-  writeFileSync(outputPath, JSON.stringify(document, null, 2));
+  app.useLogger(logger);
 
-  SwaggerModule.setup('api-document', app, document);
+  /**
+   * =========================
+   * GLOBAL PREFIX
+   * =========================
+   */
+  const prefix = configService.get<string>('app.prefix', 'api');
+  const version = configService.get<string>('app.version', 'v1');
+
+  app.setGlobalPrefix(`${prefix}/${version}`);
+
+  /**
+   * =========================
+   * GLOBAL VALIDATION
+   * =========================
+   */
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
+
+  /**
+   * =========================
+   * SWAGGER
+   * =========================
+   */
+  setupSwagger(app, {
+    prefix,
+    version,
+    configService,
+  });
+
+  /**
+   * =========================
+   * START SERVER
+   * =========================
+   */
+  console.log( configService.get<number>('app.port'))
+  const port = configService.get<number>('app.port', 3000);
 
   await app.listen(port);
-  console.log(`🚀 Application is running on http://localhost:${port}`);
+
+  logger.log(
+    `🚀 Application running at http://localhost:${port}/${prefix}/${version}`,
+  );
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  // LAST LINE OF DEFENSE
+  console.error('❌ Bootstrap failed', err);
+  process.exit(1);
+});

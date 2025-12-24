@@ -1,98 +1,231 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# NestJS Core-first Architecture (FE-first, Mockable)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+## 🎯 Mục tiêu kiến trúc
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Dự án này được thiết kế theo hướng **Core-first**, tập trung xây dựng nền tảng kỹ thuật vững chắc trước khi phát triển các domain modules.
 
-## Description
+Các mục tiêu chính:
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+* Chuẩn hóa **cross-cutting concerns** (logger, error, auth, swagger, config)
+* Hỗ trợ **FE-first development** thông qua mock layer bật/tắt bằng ENV
+* Dễ scale, dễ bảo trì, đúng tư duy TechLead / Senior
+* Không trộn business logic vào core
 
-## Project setup
+---
 
-```bash
-$ npm install
+## 🧱 Tổng quan kiến trúc
+
+```
+ENV (.env)
+   ↓
+Config Layer (config/*)
+   ↓
+Core System (core/*)
+   ↓
+Mock Layer (mock/*) [optional]
+   ↓
+Domain Modules (future)
 ```
 
-## Compile and run the project
+---
 
-```bash
-# development
-$ npm run start
+## 📁 Cấu trúc thư mục chính
 
-# watch mode
-$ npm run start:dev
+### `src/config/`
 
-# production mode
-$ npm run start:prod
+> Chỉ chứa logic **ENV → config object**
+
+* Không inject service
+* Không xử lý business
+* Dùng với `@nestjs/config`
+
+Ví dụ:
+
+* `app.config.ts`: port, prefix, version
+* `feature.config.ts`: mock, benchmark, logger flags
+
+---
+
+### `src/core/` – CORE SYSTEM
+
+Chứa toàn bộ **cross-cutting concerns**, dùng global scope.
+
+#### 1. `constants/`
+
+Các hằng số dùng chung cho core:
+
+* app metadata
+* request headers
+* context keys
+
+#### 2. `context/`
+
+Quản lý **request-scoped context**:
+
+* requestId
+* userId
+* traceId
+
+Dùng cho logger, tracing, audit.
+
+#### 3. `decorators/`
+
+Decorator dùng toàn hệ thống:
+
+* `@Public()` – bypass auth
+* `@Mockable()` – cho phép mock response
+
+#### 4. `guards/`
+
+Auth / permission ở mức core:
+
+* JWT
+* API key
+
+#### 5. `interceptors/`
+
+Cross-cutting interceptors:
+
+* Logging
+* Benchmark (performance)
+* Transform response
+
+Được đăng ký global tại `core.module.ts`
+
+#### 6. `error/`
+
+Chuẩn hóa error handling:
+
+* ErrorCode enum
+* BaseAppException
+* GlobalExceptionFilter
+* Unified error response
+
+#### 7. `logger/`
+
+Hệ thống logging:
+
+* AppLogger (domain-agnostic)
+* Transport (winston / pino)
+* Dùng được cho Nest internal + business log
+
+#### 8. `database/`
+
+Database abstraction:
+
+* Factory pattern
+* Multiple drivers (mongo / postgres / mysql)
+* Bật driver bằng ENV
+
+#### 9. `cache/`
+
+Cache abstraction tương tự database:
+
+* redis / rabbit / memcached
+
+#### 10. `swagger/`
+
+Swagger setup tập trung:
+
+* Setup 1 lần
+* Dùng config từ ENV
+
+---
+
+### `src/mock/` – MOCK LAYER (FE-FIRST)
+
+Cho phép phát triển frontend trước backend.
+
+#### Thành phần:
+
+* `faker/`: generate fake data
+* `data/`: static mock data
+* `registry/`: map route → mock handler
+* `handler/`: xử lý mock tập trung
+
+Mock có thể bật/tắt bằng ENV:
+
+```
+FEATURE_MOCK=true
 ```
 
-## Run tests
+---
 
-```bash
-# unit tests
-$ npm run test
+### `src/shared/`
 
-# e2e tests
-$ npm run test:e2e
+Chia sẻ nhẹ giữa các module:
 
-# test coverage
-$ npm run test:cov
+* constants
+* enums
+* types
+
+⚠️ Không chứa logic core
+
+---
+
+## 🚀 Vòng đời request
+
+```
+Request
+  ↓
+Middleware (context)
+  ↓
+Guard (auth)
+  ↓
+Interceptor (logging, benchmark)
+  ↓
+Mock Handler (nếu bật)
+  ↓
+Controller → Service
+  ↓
+Transform Interceptor
+  ↓
+Response
 ```
 
-## Deployment
+---
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## 🔧 ENV mẫu
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+```env
+NODE_ENV=development
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+APP_PORT=3500
+APP_PREFIX=api
+APP_VERSION=v1
+
+FEATURE_MOCK=true
+FEATURE_BENCHMARK=true
+
+LOGGER_LEVEL=info
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+---
 
-## Resources
+## 🧠 Nguyên tắc TechLead
 
-Check out a few resources that may come in handy when working with NestJS:
+* Core **không phụ thuộc domain**
+* Config **không chứa logic**
+* Mock **là chiến lược, không phải hack**
+* Mọi thứ có thể bật/tắt bằng ENV
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+---
 
-## Support
+## 📌 Roadmap đề xuất
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+* [ ] Thêm domain module (user / product)
+* [ ] Add RBAC guard
+* [ ] Add request tracing (OpenTelemetry)
+* [ ] Add health check module
 
-## Stay in touch
+---
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## ✅ Kết luận
 
-## License
+Kiến trúc này phù hợp cho:
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+* Team backend 3–10 người
+* FE-first / mobile-first
+* Project scale vừa đến lớn
+
+> "Build the core right, features will follow."

@@ -1,11 +1,20 @@
-import { Module, Global } from '@nestjs/common';
-import { MockAuthController } from './auth/mock-auth.controller';
-import { MockAuthService } from './auth/mock-auth.service';
+import { Global, Module, OnModuleInit } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+
+import { MockInterceptor } from './mock.handler';
+import { registerAllMocks } from './apis';
 
 @Global()
 @Module({
-  controllers: [MockAuthController],
-  providers: [MockAuthService],
-  exports: [MockAuthService],
+  providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: MockInterceptor,
+    },
+  ],
 })
-export class MockModule {}
+export class MockModule implements OnModuleInit {
+  onModuleInit() {
+    registerAllMocks();
+  }
+}

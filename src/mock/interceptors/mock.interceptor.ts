@@ -1,34 +1,49 @@
 import {
+  CallHandler,
+  ExecutionContext,
   Injectable,
   NestInterceptor,
-  ExecutionContext,
-  CallHandler,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Observable, of } from 'rxjs';
-import { MOCK_KEY } from '../decorators/mock.decorator';
-import { MockAuthService } from '../auth/mock-auth.service';
+import { Observable, of, throwError } from 'rxjs';
+import { delay, mergeMap } from 'rxjs/operators';
+
+import { MOCK_KEY } from '../decorators/mockable.decorator';
+import { resolveMock } from '../mock.registry';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class MockInterceptor implements NestInterceptor {
   constructor(
-    private reflector: Reflector,
-    private mockAuth: MockAuthService,
+    private readonly reflector: Reflector,
+    private readonly config: ConfigService,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const isMock = this.reflector.get<boolean>(
+    const meta = this.reflector.get<{ key: string; delay?: number; errorRate?: number }>(
       MOCK_KEY,
       context.getHandler(),
     );
 
-    if (!isMock) return next.handle();
+    if (!meta) return next.handle();
 
-    const handler = context.getHandler().name;
+    const globalMockEnabled = this.config.get<boolean>('feature.mock.enabled');
+    if (!globalMockEnabled) return next.handle();
 
-    if (handler === 'login') return of(this.mockAuth.login());
-    if (handler === 'verifyToken') return of(this.mockAuth.verifyToken());
+    const mockData = resolveMock(meta.key);
+    if (!mockData) return next.handle();
 
-    return next.handle();
+    const response$ = of(mockData).pipe(
+      mergeMap((data) => {
+        // Simulate random error
+        if (meta.errorRate && Math.random() < meta.errorRate) {
+          return throwError(() => new Error('Mocked random error'));
+        }
+        return of(data);
+      }),
+      delay(meta.delay ?? 300), // default delay 300ms
+    );
+
+    return response$;
   }
 }
